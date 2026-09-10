@@ -1,11 +1,11 @@
-# Video Link Vault — Mini Project
+# Video Link Vault — Final Project
 
 A scaled-down, full-stack practice build of **Video Link Vault**: an ASP.NET Core Web API + React app that lets a user register, log in, and save, browse, filter, and delete video links from TikTok, YouTube, Instagram and Facebook — one private vault per account, organized by category and tags. Built as ASP.NET Core / React integration reps ahead of the full Video Link Vault capstone project.
 
 ## Screenshots
 
-| Log in | Vault (13 seeded demo links) |
-|---|---|
+| Log in                                             | Vault (13 seeded demo links)                                                                        |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | ![Login dialog](docs/screenshots/login-dialog.png) | ![Vault view with platform chips, categories, and a card grid](docs/screenshots/dashboard-view.png) |
 
 ## Features
@@ -22,12 +22,12 @@ A scaled-down, full-stack practice build of **Video Link Vault**: an ASP.NET Cor
 
 ## Tech Stack
 
-| | |
-|---|---|
-| **Backend** | C#, .NET 10, ASP.NET Core Web API (controller-based) |
-| **Frontend** | React 19 + Vite |
-| **Storage** | In-memory (`List<T>`) — no database, by design (see [PRD.md](PRD.md)) |
-| **Auth** | `Microsoft.AspNetCore.Identity.PasswordHasher<T>` for hashing; no JWT (see Known Limitations) |
+|              |                                                                                               |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| **Backend**  | C#, .NET 10, ASP.NET Core Web API (controller-based)                                          |
+| **Frontend** | React 19 + Vite                                                                               |
+| **Storage**  | In-memory (`List<T>`) — no database, by design (see [PRD.md](PRD.md))                         |
+| **Auth**     | `Microsoft.AspNetCore.Identity.PasswordHasher<T>` for hashing; no JWT (see Known Limitations) |
 
 ## Project Structure
 
@@ -50,21 +50,26 @@ Full design rationale, data types, and API endpoint list are in **[PRD.md](PRD.m
 ## Getting Started
 
 **Backend**
+
 ```
 cd Backend/Backend_Link_Vault
 dotnet run
 ```
+
 Runs at `https://localhost:7118` by default (confirm the port matches `Frontend/Frontend_Link_Vault/src/config.js`).
 
 **Frontend**
+
 ```
 cd Frontend/Frontend_Link_Vault
 npm install
 npm run dev
 ```
+
 Runs at `http://localhost:5173`.
 
 ### Demo login
+
 A demo account is seeded automatically at backend startup:
 
     Email:    timothy@example.com
@@ -74,13 +79,13 @@ It comes preloaded with 13 sample links across all four platforms so the app is 
 
 ## API Endpoints
 
-| Method | Route | Purpose |
-|---|---|---|
-| POST | `/api/auth/register` | Create an account |
-| POST | `/api/auth/login` | Log in |
-| GET | `/api/videolinks/{userId}` | List that account's links |
-| POST | `/api/videolinks/{userId}` | Add a link |
-| DELETE | `/api/videolinks/{userId}/{linkId}` | Delete a link |
+| Method | Route                               | Purpose                   |
+| ------ | ----------------------------------- | ------------------------- |
+| POST   | `/api/auth/register`                | Create an account         |
+| POST   | `/api/auth/login`                   | Log in                    |
+| GET    | `/api/videolinks/{userId}`          | List that account's links |
+| POST   | `/api/videolinks/{userId}`          | Add a link                |
+| DELETE | `/api/videolinks/{userId}/{linkId}` | Delete a link             |
 
 ## Known Limitations
 
