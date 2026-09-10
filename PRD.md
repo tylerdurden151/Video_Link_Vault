@@ -65,6 +65,7 @@ One direct, positive side effect: `{userId}` disappears from the API routes. `GE
 Monorepo, cloned outside OneDrive (same reasoning as the mini project — background sync can corrupt `.git`). One new top-level project (`VideoLinkVault.Core`) shared between the API and, eventually, nothing on the frontend side (React/React Native don't reference a .NET class library — Core exists for the API and any future .NET client, not for code-sharing with JS):
 
     VideoLinkVault/
+    ├── docker-compose.yml                            NEW — local Postgres 16 container for dev; VideoLinkVaultDbContext points here by default
     ├── src/
     │   ├── VideoLinkVault.Core/                     shared class library — no DB, no web dependencies
     │   │   ├── Models/
@@ -82,6 +83,10 @@ Monorepo, cloned outside OneDrive (same reasoning as the mini project — backgr
     │   │   │   │   ├── VideoLinkConfiguration.cs     NEW — Platform.HasConversion<string>(), Tags as Postgres text[]
     │   │   │   │   └── UserConfiguration.cs          NEW — unique index on EntraObjectId
     │   │   │   └── Migrations/                       EF Core migrations; applied via CI as an idempotent SQL script, not Database.Migrate()
+    │   │   │
+    │   │   │       ↳ target database — NOT a folder in this repo, an external resource the connection string/managed identity point at:
+    │   │   │           local dev  → `docker-compose.yml`'s Postgres 16 container (root of the repo, password auth, disposable)
+    │   │   │           deployed   → Azure Database for PostgreSQL – Flexible Server (B1ms), auth via App Service's managed identity — no password, no connection string secret anywhere
     │   │   ├── DTO/
     │   │   │   ├── CreateVideoLinkRequest.cs         unchanged from the mini project
     │   │   │   ├── UserResponse.cs                   trimmed — no password-adjacent fields ever existed to remove, but drops nothing new
