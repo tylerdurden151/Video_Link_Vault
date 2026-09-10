@@ -1,124 +1,136 @@
-# PRD.md — Video Link Vault (Mini Project)
+# PRD.md — Video Link Vault (Capstone)
 
-*As-built, updated Sep 8 2026. Sections follow the Application Design Guidelines outline. Where the delivered app differs from the original plan, see "Deviations from the Original Plan" at the end — the drift was deliberate in every case, and the reasoning is recorded in `memory.md`.*
+*Drafted Sep 10 2026. Today's date and deadline both anchor this doc: work begins Sep 10, full capstone due **Mon Oct 5 2026** (25 days). Supersedes the mini-project `PRD.md` this repo was seeded from — that document is preserved in git history and remains the accurate as-built record of the mini project itself; this one describes the target state of the capstone build. Where a capstone decision reopens or changes a mini-project decision, that's called out explicitly rather than silently overwritten — see `memory.md` for the full reasoning behind each one.*
 
 ## Purpose
-A scaled-down, ASP.NET Core Web API + React practice build of Video Link Vault: users register/log in, then add, browse, filter, and delete their own saved video links from TikTok, YouTube, Instagram and Facebook. Data is held in memory with no database, to build reps on ASP.NET/React integration ahead of the full capstone. Each account has its own private vault; links are organised by one category apiece and any number of free-form tags, and are browsable by platform, category, search text and time range.
+A cloud-native, multi-user version of Video Link Vault: users sign in with their own account (no more hardcoded demo credentials), save/browse/filter/delete video links from TikTok, YouTube, Instagram, and Facebook, and organize them by category and free-form tags — same product as the mini project, now backed by a real database, real identity, and a real Azure deployment, with a subscription tier and an admin view layered on top. Built to demonstrate production Azure patterns (managed identity, Key Vault, API gateway, CI/CD) to recruiters, not just CRUD.
 
 ## Language, Framework, Version, App Type
-- **Backend:** C#, .NET 10 (LTS), ASP.NET Core Web API (controller-based, not minimal API)
-- **Frontend:** JavaScript/React 19 (Vite), run locally via `npm run dev` — no build/deploy step for this mini project
-- **App type:** Web application (REST API + SPA client), local-only, no Azure resources, no database
-- **Password hashing:** `Microsoft.AspNetCore.Identity.PasswordHasher<T>` (the framework's hasher only — full ASP.NET Core Identity is not used)
+- **Backend:** C#, .NET 10 (LTS), ASP.NET Core Web API (controller-based)
+- **Frontend:** JavaScript/React 19 (Vite), deployed to Azure Static Web Apps
+- **Mobile (stretch):** React Native (Expo), separate codebase, same backend
+- **Database:** Azure Database for PostgreSQL – Flexible Server, EF Core + Npgsql
+- **Identity:** Microsoft Entra External ID (external tenant)
+- **App type:** Cloud-hosted web application (REST API + SPA client), single Azure region, with an optional mobile client
 
-## Design of Custom Data Types
+## Architecture (target state)
+
+    React Web App (Azure Static Web Apps)   \
+                                               -->  API Management (Consumption)  -->  ASP.NET Core API (Azure App Service)  -->  Azure Database for PostgreSQL
+    React Native mobile app — stretch goal  /              ^                                    |         ^
+                                                             |                                    |         |
+                                                    validate-jwt / rate-limit                Managed Identity   Managed Identity
+                                                    (Entra External ID tokens)             (no secrets)     (token as password)
+                                                                                                    |
+                                                                                              Azure Key Vault
+                                                                                          (Stripe keys, webhook secret)
+
+**Identity — Microsoft Entra External ID, not roll-your-own.** Azure AD B2C has been closed to new customers since May 1, 2025, so it was never an option for a project starting now. Entra External ID is the direct replacement: a separate external tenant, self-service email signup, first 50,000 monthly active users free. This **replaces** the mini project's `AuthController`, `UserStore`'s credential role, `IPasswordHasher<User>`, and the `PasswordHash`/`LoginRequest`/`RegisterRequest` DTOs — those are removed, not extended. Identity for a request comes from a validated JWT's `oid` claim, not a session built on a hashed password.
+
+A local `users` table is kept, but its job changes: it's a **profile row keyed by the Entra object ID** (email, display name, Stripe customer ID, subscription status, admin flag), not a credential store. The first authenticated request from an `oid` with no matching row creates one — just-in-time provisioning. `links.user_id` continues to point at this table's `Id`.
+
+One direct, positive side effect: `{userId}` disappears from the API routes. `GET/POST /api/links`, `DELETE /api/links/{id}` — the owner comes from the validated token, not a route parameter a client could substitute. This closes the mini project's documented, accepted limitation ("any client that knows a GUID can read or delete that account's links").
+
+**Database access — passwordless, via managed identity.** App Service gets a system-assigned managed identity. `Azure.Identity`'s `DefaultAzureCredential` requests a token for scope `https://ossrdbms-aad.database.windows.net/.default`; Npgsql's `UsePeriodicPasswordProvider` on the `NpgsqlDataSourceBuilder` uses that token as the connection password and handles refresh/caching automatically. There is no database password anywhere — not in `appsettings.json`, not in Key Vault, not in a GitHub secret. Local development keeps a real password (Docker Postgres / .NET user-secrets); the code attaches the token provider only when the configured connection string has no password, so one codebase serves both environments without an `if (isProduction)` branch scattered through it. The Postgres side needs a database role created for the managed identity with the right grants — a manual, portal-driven step to do once, deliberately, not on deploy day.
+
+**Secrets — Key Vault holds only what's actually secret.** With the database password eliminated, Key Vault's job is the Stripe secret key and the Stripe webhook signing secret. App Service reads them via its managed identity (`DefaultAzureCredential` again, same mechanism, different scope) — no secret ever sits in App Service configuration in plaintext.
+
+**Gateway — API Management (Consumption tier), not Front Door.** APIM is the single front door for both the web app and (eventually) the mobile app: `validate-jwt` verifies the Entra token's signature and issuer before a request ever reaches the API, and `rate-limit-by-key`/`quota-by-key` policies provide Layer-7 abuse protection. Consumption tier includes the first million operations/month at no fixed cost; the tradeoff is a multi-second cold start on the first request after idle, which needs a warm-up call before any live demo.
+
+**Front Door — deliberately out of the MVP, considered and rejected for this shape, not just deferred.** Azure's infrastructure-level DDoS protection (Layer 3/4) is already on by default and free for every public IP, App Service and APIM included — no action needed. Azure's paid DDoS tiers (Network Protection, ~$2,944/mo; IP Protection, ~$199/mo per IP) attach to a standalone Public IP resource inside a VNet — a shape neither App Service nor APIM Consumption/Basic has without a networking change out of scope here, so they don't actually apply to this architecture regardless of cost. Front Door's real value on top of APIM would be Layer-7 flood mitigation and a managed WAF, but the managed rule sets and bot protection live in the Premium tier ($330/mo) — the free default protection plus APIM's own rate-limiting policy covers this project's actual risk profile at $0. **Front Door Standard is the one item on the original wishlist explicitly cut, on security-architecture grounds, not budget grounds** — it would be redundant in front of APIM for a single-region app with no real attacker profile. Revisit only if a real production traffic pattern ever justifies it.
+
+**CI/CD — GitHub Actions with OIDC federated credentials**, not a stored publish profile or service-principal secret — the same no-plaintext-secrets posture as the database and Key Vault access, extended into the pipeline. EF Core migrations are generated as an idempotent SQL script in CI and applied as an explicit deploy step, not via `Database.Migrate()` at app startup — decouples "the app started" from "the schema changed" and is the habit worth building now. **Known gotcha, planned for in advance:** if the Postgres firewall is locked down, the GitHub-hosted runner's IP needs to be allowed (or a self-hosted runner used) for migrations to reach the database during deploy.
+
+## Design of Custom Data Types (changes from the mini project)
 
 **Models**
-- **`Platform`** (enum) — `TikTok`, `YouTube`, `Instagram`, `Facebook`. Serialized as its string name (not an int) via `JsonStringEnumConverter`, registered in `Program.cs`.
-- **`VideoLink`** (class) — `Id` (Guid), `UserId` (Guid, owner), `Url` (string), `Platform` (Platform), `Title` (string?), `ThumbnailUrl` (string?, `null` renders a placeholder card), `Category` (string, exactly one per link — drives the sidebar list and counts), `Tags` (`List<string>`, zero or more — rendered as chips on the card), `CreatedAtUtc` (DateTime).
-- **`User`** (class) — `Id` (Guid), `FirstName`, `LastName`, `Email`, `PasswordHash`. **`Email` is a hand-written property with a private backing field enforcing three invariants in its setter:** it cannot be blank, it must contain `@`, and it cannot be reassigned once set (throws `ArgumentException` / `InvalidOperationException`). This is the project's clearest example of encapsulation — the class defends its own validity rather than trusting callers.
+- `VideoLink` — unchanged shape (`Id`, `UserId`, `Url`, `Platform`, `Title`, `ThumbnailUrl`, `Category`, `Tags`, `CreatedAtUtc`), but now an EF Core entity. `Platform` requires `HasConversion<string>()` in the EF configuration or it persists as an `int` — unreadable rows, and a future enum reorder would silently corrupt existing data. `Tags` maps to Postgres `text[]` via Npgsql's native array support (decided over a join table — reopen only if tags ever need renaming/merging/their own counts).
+- `User` — repurposed as a profile, not a credential holder. Drops `PasswordHash` entirely. Gains: `EntraObjectId` (the `oid` claim, unique, the real identity key), `StripeCustomerId` (nullable until a subscription starts), `SubscriptionStatus` (free / active / past_due / canceled), `IsAdmin` (bool, or superseded by an Entra app role — see Admin section). The existing hand-written `Email` property (private backing field, blank/format/immutability validation) is kept — it's still a good encapsulation example, and email still needs storing even though it no longer authenticates anything.
+- **`VideoMetadataService`** (new) — `GetMetadataAsync(url)` switches on `DetectPlatform(url)`. Two real branches: **YouTube** (free, no network call — the existing `getYouTubeThumbnail()` ID-extraction logic moves server-side unchanged) and **TikTok** (oEmbed, open, no key required, the one platform where going server-side genuinely unlocks a thumbnail the client couldn't produce alone). Two fallback branches: **Instagram and Facebook always return a placeholder.** This is not a gap to close later — Meta's oEmbed responses stopped including `thumbnail_url` for Facebook posts/videos and Instagram posts effective Nov 3 2025 (verified directly against Meta's developer blog, logged in `memory.md`), and the replacement path requires a Meta developer app plus a `meta_oembed_read` token this project has no reason to obtain. `IHttpClientFactory` (never `new HttpClient()`), a ~3s timeout, and a try/catch that falls back to `null` — a missing thumbnail is a gray placeholder card, a failed HTTP call must never fail the save.
 
-**DTOs** (deliberately separate from the models, so the API's input/output shapes are decoupled from storage)
-- **`CreateVideoLinkRequest`** — `Url` (`[Required] [Url]`), `Platform` (`[Required]`, nullable enum so a missing value fails validation instead of silently defaulting to `TikTok`), `Title` (`[MaxLength(200)]`), `ThumbnailUrl`, `Category` (`[Required]`), `Tags`.
-- **`RegisterRequest`** — `FirstName`/`LastName` (`[Required] [MaxLength(50)]`), `Email` (`[Required] [EmailAddress]`), password (`[Required] [MinLength(8)]`).
-- **`LoginRequest`** — `Email` (`[Required] [EmailAddress]`), password (`[Required]`).
-- **`UserResponse`** — `Id`, `FirstName`, `LastName`, `Email`. **Deliberately carries no password field of any kind**, so a hash can never be serialized to a client.
+**Subscriptions (new)**
+- `SubscriptionTier` (enum: `Free`, `Paid`) drives a **free-tier cap of 25 links**; `Paid` accounts are uncapped. This is the smallest paywall that touches the product in exactly one place (the add-link path checks the count before inserting) rather than gating features throughout the UI.
+- Stripe integration runs in **test mode** for the whole project — no real charges, no business entity required, same Checkout/webhook flow as production. `POST /api/billing/checkout` creates a Stripe Checkout Session for the demo product/price; a webhook endpoint (`POST /api/billing/webhook`) verifies the Stripe signature using the webhook secret from Key Vault and updates `SubscriptionStatus`/`StripeCustomerId` on the `users` row. The webhook, not the redirect-back page, is the source of truth for subscription state — a browser tab closing mid-checkout must never leave the account in a stale state.
 
-**Services (storage layer)**
-- **`UserStore`** — `FindByEmail`, `FindById`, `Add`, `GetAllUsers`; wraps a `List<User>`.
-- **`VideoLinkStore`** — `GetForUser`, `Add`, `Delete(userId, linkId)`, `SeedDemoData(userId)`; wraps a `List<VideoLink>` and filters by `UserId` so accounts never see each other's links.
-- Both are registered as **singletons** in `Program.cs`. This is load-bearing: scoped or transient registration would build a fresh list per request and silently wipe all data between calls.
+**Admin (new)**
+- Modeled as an **Entra app role** (`Admin`) assigned in the External ID tenant, surfaced as a `roles` claim on the token and checked via `[Authorize(Roles = "Admin")]` — not a hand-rolled `IsAdmin` boolean on the `User` row, which would be one more piece of custom auth logic in a project that just finished removing custom auth logic. One concrete screen: an admin-only page/endpoint listing all users with their link count and subscription status (`GET /api/admin/users`) — enough for the role to do something visible, not a stub.
 
-**Data structures used:** `List<T>` (both stores, and `Tags`), `Guid` keys for identity, and — on the frontend — a `Map` for deriving per-category counts and a `Set` for de-duplicating tags on submit.
+## Solution Structure (target)
 
-No inheritance hierarchy — scope is intentionally small. Composition and interface-based framework abstractions (`IPasswordHasher<User>` injected by DI) are used instead.
+    VideoLinkVault/
+    ├── src/
+    │   ├── VideoLinkVault.Core/            shared models, Platform enum, VideoMetadataService interface
+    │   ├── VideoLinkVault.Api/             ASP.NET Core Web API, EF Core + Npgsql, the only project with a DB connection
+    │   │   ├── Data/                       DbContext, EF configurations (Platform HasConversion, Tags as text[])
+    │   │   ├── Controllers/                LinksController, BillingController, AdminController
+    │   │   ├── Services/                   VideoMetadataService, StripeService
+    │   │   └── Migrations/
+    │   └── VideoLinkVault.Web/             React 19 + Vite, MSAL for Entra External ID sign-in
+    ├── mobile/ (stretch)                   React Native (Expo), separate codebase
+    └── .github/workflows/                  build/test/migrate/deploy via OIDC
 
-## Preliminary Solution Structure
-Monorepo, two sibling projects (`MSSA_Mini_Project`, cloned outside OneDrive so background sync can't corrupt `.git`):
+**Endpoints (target)**
 
-    MSSA_Mini_Project/
-    ├── Backend/Backend_Link_Vault/        ASP.NET Core Web API
-    │   ├── Models/
-    │   │   ├── Platform.cs
-    │   │   ├── VideoLink.cs
-    │   │   └── User.cs
-    │   ├── DTO/
-    │   │   ├── CreateVideoLinkRequest.cs
-    │   │   ├── RegisterRequest.cs
-    │   │   ├── LoginRequest.cs
-    │   │   └── UserResponse.cs
-    │   ├── Services/
-    │   │   ├── UserStore.cs
-    │   │   └── VideoLinkStore.cs
-    │   ├── Controllers/
-    │   │   ├── VideoLinksController.cs
-    │   │   └── AuthController.cs
-    │   └── Program.cs                     DI, CORS, JSON enum converter, demo seed
-    └── Frontend/Frontend_Link_Vault/      React 19 + Vite
-        └── src/
-            ├── App.jsx                    owns links, categories, filters, auth state
-            ├── config.js                  API base URL
-            └── components/                each with a co-located .css
-                ├── LinkCard.jsx
-                ├── CategorySidebar.jsx
-                ├── SearchBar.jsx
-                ├── AddLinkDialog.jsx
-                └── AuthDialog.jsx
+| Method | Route | Purpose | Auth |
+|---|---|---|---|
+| GET | `/api/links` | List the caller's links | Bearer token required |
+| POST | `/api/links` | Add a link (blocked if free tier + at cap) | Bearer token required |
+| DELETE | `/api/links/{id}` | Delete a link | Bearer token required |
+| POST | `/api/billing/checkout` | Create a Stripe Checkout session | Bearer token required |
+| POST | `/api/billing/webhook` | Stripe webhook receiver | Stripe signature, not a bearer token |
+| GET | `/api/admin/users` | List all users + link counts + subscription status | Bearer token, `Admin` role |
 
-**Endpoints**
+## Build Order (dependency-ordered, not date-boxed — see Timeline for how this maps to Oct 5)
 
-| Method | Route | Purpose |
-|---|---|---|
-| POST | `/api/auth/register` | Create an account; returns `UserResponse` |
-| POST | `/api/auth/login` | Verify credentials; returns `UserResponse` |
-| GET | `/api/videolinks/{userId}` | List that account's links |
-| POST | `/api/videolinks/{userId}` | Add a link |
-| DELETE | `/api/videolinks/{userId}/{linkId}` | Delete one link |
-
-**Cross-cutting:** a `FrontendDev` CORS policy allows `http://localhost:5173` (Vite's dev port), applied before `MapControllers()`. Login returns the same generic `401` whether the email is unknown or the password is wrong, to prevent user enumeration. A demo account (`timothy@example.com`) is seeded at startup with thirteen sample links spanning all four platforms, so the app is immediately demonstrable after any restart.
-
-## Features Delivered
-- Register / log in / sign out, with a password-visibility toggle on both forms
-- Per-account vault: three distinct UI states (logged out, logged in with an empty vault, logged in with data)
-- Add a link: URL, optional title, auto-detected platform with manual override, category, comma-separated tags (de-duplicated on save)
-- Delete a link, with the grid, footer total and sidebar counts all updating from one piece of state
-- Filter by platform chips, by user-created category, by free-text search, and by time range — all composable
-- User-created categories with live per-category counts
-- YouTube thumbnails derived from the video ID with no API call; other platforms render a placeholder card
-- Click a card's thumbnail to open the video in a new tab
-- Loading and error messaging on the link fetch and delete paths, including a "Loading your links…" state during the initial fetch after login
+1. Solution restructure + EF Core against local Docker Postgres; port existing CRUD; finally build the `IVideoLinkRepository`/EF-backed-repository seam the mini project deliberately deferred (PRD.md's mini-project Deviation #4).
+2. Entra External ID: tenant provisioning, MSAL on the frontend, JWT validation on the API, JIT user provisioning, routes lose `{userId}`.
+3. Azure deploy: App Service + Azure Postgres + managed-identity DB auth + Key Vault; GitHub Actions CI/CD via OIDC with idempotent-script migrations; APIM Consumption with `validate-jwt` + `rate-limit-by-key`. **A real, live, single-user-working deployment exists at the end of this step** — the checkpoint that matters if nothing after it finishes in time.
+4. `VideoMetadataService` — YouTube + TikTok server-side, Meta placeholders.
+5. Stripe (test mode) + free-tier cap + secrets in Key Vault.
+6. Admin app role + `/api/admin/users` + a minimal admin screen.
+7. React Native (Expo) read-only client — sign in, list links.
+8. Front Door Standard — explicitly cut from MVP (see Architecture); only reconsidered if everything else lands early.
 
 ## External Resources Required
-- **Local tooling only:** .NET 10 SDK, Node.js/npm, Visual Studio (backend), VS Code (frontend)
-- **No database, no Azure resources, no authentication provider, no API keys**
-- **One third-party asset, no account needed:** YouTube's public thumbnail URL pattern (`https://img.youtube.com/vi/{videoId}/hqdefault.jpg`), built by string manipulation from the video ID. No request is made to any YouTube API — the browser simply loads the image. Three of the demo account's thirteen seeded links use real YouTube URLs with this thumbnail attached, so the demo shows both a populated and a placeholder card side by side; the remaining ten (TikTok, Instagram, Facebook, and three older YouTube entries with placeholder IDs) render the gray placeholder.
+- Azure subscription: **MSSA/sponsored** (confirm the spending limit directly with the program if one exists; budgeting below assumes none is hit)
+- Microsoft Entra External ID tenant (separate from the main Azure AD tenant)
+- Azure Database for PostgreSQL – Flexible Server (Burstable B1ms or similar)
+- Azure App Service (Linux, B1 or similar)
+- Azure API Management (Consumption tier)
+- Azure Key Vault
+- Stripe account (test mode — no business verification needed)
+- GitHub Actions (OIDC federated credential configured against the Azure subscription, no stored secrets)
+- TikTok oEmbed (open, no key). YouTube thumbnail URL pattern (no API key, no account). Instagram/Facebook: **not obtained** — Meta developer app + `meta_oembed_read` deliberately out of scope (see VideoMetadataService above).
 
-## Planned vs. Actual Development Time
-Planned **~10 hours** against the 8–12 hour budget. Actual effort ran higher, because auth and per-user data were added after the original estimate was written:
+## Estimated Monthly Cost (lean stack, MSSA subscription)
 
-| Area | Hrs |
+| Resource | Approx. cost |
 |---|---|
-| API scaffold, models, DTOs, in-memory stores | ~3 |
-| Auth vertical (register/login, hashing, DTOs, demo seeding) | ~2 |
-| Video link CRUD endpoints + Postman verification | ~2 |
-| React app, layout, components, filters, categories | ~4 |
-| Wiring the frontend to the real API (auth, load, add, delete) | ~3 |
-| Polish: thumbnails, loading/error states, accessibility, theming | ~2 |
+| App Service (B1) | ~$13 |
+| Azure Postgres Flexible Server (B1ms + storage) | ~$15–20 |
+| Static Web Apps | free tier |
+| Entra External ID | free (< 50,000 MAU) |
+| Key Vault | pennies |
+| API Management (Consumption) | ~free at this volume |
+| Front Door | $0 — cut from MVP |
+| DDoS Network/IP Protection | $0 — doesn't apply to this architecture (see Architecture) |
+| **Total** | **~$30–35/month** |
 
-## Deviations from the Original Plan
-Each was a deliberate call, not drift:
-1. **Authentication was added.** Not in the original PRD at all. The app grew a real register/login flow with hashed passwords and per-account vaults, which is why `User`, three auth DTOs, `UserStore` and `AuthController` exist.
-2. **Routes are per-user.** `/api/videolinks/{userId}` rather than the flat `/api/videolinks`, following from (1).
-3. **`Platform` has four values, not five.** The planned `Unknown` member was dropped; instead the frontend refuses to submit a URL it can't match to a known platform, so an unrecognised value never reaches the API.
-4. **`IVideoLinkRepository` / `InMemoryVideoLinkRepository` were not built.** The concrete `VideoLinkStore` is injected directly. Functionally equivalent here; the interface seam is deferred to the capstone, where swapping in EF Core/Postgres makes it worthwhile. *Known gap — this was the planned OOP abstraction point.*
-5. **Solution structure is a two-project monorepo**, not a single API project with a `client/` subfolder.
-6. **`CreateVideoLinkRequest` carries more fields than planned** (`Platform`, `Title`, `ThumbnailUrl`), because platform detection and thumbnail derivation currently happen client-side.
+Check whether the MSSA subscription carries Azure-for-Students-style free credits for Postgres; if so this drops further. App Service and Postgres figures are estimates from public pricing guidance current as of Sep 2026 — verify against the Azure Pricing Calculator before committing.
 
-## Known Limitations (accepted, not defects)
-- **No JWT or token auth.** `{userId}` is taken from the route with nothing to prove the caller owns it, so any client that knows a GUID can read or delete that account's links. Explicitly deferred to the capstone; the MSSA rubric grades OOP and language fundamentals rather than auth hardening.
-- **All data is in RAM.** Every account and link is lost on backend restart, including one triggered by Hot Reload. Only the seeded demo account survives, by design.
-- **Thumbnails are YouTube-only.** TikTok would need a server-side oEmbed call; Instagram and Facebook removed `thumbnail_url` from their oEmbed responses effective Nov 3 2025 and require a Meta developer token regardless. Placeholders are used for all three. Moving derivation to a backend `VideoMetadataService` is a capstone task.
-- **The add-link dialog is not fully keyboard-accessible.** It sets `role="dialog"`, `aria-modal` and `aria-labelledby`, but `aria-modal` does not trap focus; real focus-trapping needs a ref/effect pair, out of scope here.
+## Known Limitations (accepted, not defects, going into the capstone build)
+- **Instagram and Facebook links never get a real thumbnail.** Placeholder cards only, permanently, for reasons outside this project's control (Meta's Nov 2025 oEmbed changes). Documented as an accepted limitation, not a TODO.
+- **APIM Consumption has a cold-start penalty.** A demo must include a warm-up request before anything is shown live.
+- **Stripe runs in test mode only.** No real payment processing; this is a deliberate scope boundary, not a placeholder for "wire up real billing later."
+- **React Native, if it ships at all, is read-only** (sign in + list). Add/delete on mobile is out of scope for this deadline.
 
-## Pending Cleanup (non-blocking, tracked in `memory.md`)
-- Three comments in `App.jsx` (on `links`, `signOut`, and `categoryList`) still refer to "mock data" as the seed source. `links`/`categoryList` now start empty per account and are populated from the real API on login — the comments are leftover from the pre-wiring version of the code and should be reworded before submission, but nothing they describe is functionally wrong.
+## Deviations from the Mini Project (each deliberate, reasoning in `memory.md`)
+1. **Auth is fully replaced, not extended.** Entra External ID replaces the mini project's hashed-password auth outright; `AuthController`/`UserStore`'s credential logic/`PasswordHash` DTOs are removed.
+2. **`{userId}` leaves the routes.** Ownership now comes from the validated token, closing the mini project's accepted "anyone with a GUID can access that vault" limitation.
+3. **A real relational database replaces in-memory storage**, per the plan since the original v3 design doc — not a new decision, just finally executed.
+4. **The `IVideoLinkRepository` interface seam**, deliberately skipped in the mini project, gets built now that EF Core/Postgres makes it worth having.
+5. **Video metadata generation moves server-side**, closing the "client can lie about platform/thumbnail" trust gap flagged since the mini project's VideoMetadataService discussion.
+6. **The product gains a subscription tier and an admin role**, neither present nor planned in the mini project's original scope.
+
+---
+*This PRD reflects decisions made through Sep 10 2026. It will be revised if scope changes before Oct 5 — see `memory.md`'s running log for anything decided after this date.*
