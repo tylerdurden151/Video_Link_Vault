@@ -17,15 +17,26 @@ A cloud-native, multi-user version of Video Link Vault: users sign in with their
 
 ## Architecture (target state)
 
-    React Web App (Azure Static Web Apps)   \
-                                               -->  API Management (Consumption)  -->  ASP.NET Core API (Azure App Service)  -->  Azure Database for PostgreSQL
-    React Native mobile app — stretch goal  /              ^                                    |         ^
-                                                             |                                    |         |
-                                                    validate-jwt / rate-limit                Managed Identity   Managed Identity
-                                                    (Entra External ID tokens)             (no secrets)     (token as password)
-                                                                                                    |
-                                                                                              Azure Key Vault
-                                                                                          (Stripe keys, webhook secret)
+```mermaid
+flowchart LR
+    Web["React Web App<br/>(Azure Static Web Apps)"]
+    Mobile["React Native App<br/>(stretch goal)"]
+    Entra(["Entra External ID<br/>issues tokens"])
+    APIM["API Management<br/>(Consumption tier)<br/><i>validate-jwt · rate-limit-by-key</i>"]
+    Api["ASP.NET Core API<br/>(Azure App Service)<br/><i>system-assigned managed identity</i>"]
+    DB[("Azure Database<br/>for PostgreSQL")]
+    KV["Azure Key Vault<br/><i>Stripe secret key ·<br/>webhook signing secret</i>"]
+
+    Entra -. issues token .-> Web
+    Entra -. issues token .-> Mobile
+    Web --> APIM
+    Mobile --> APIM
+    APIM -->|"Bearer token,<br/>already validated"| Api
+    Api -->|"token as password<br/>(no connection string)"| DB
+    Api -->|"token, read secrets"| KV
+```
+
+Every arrow into or out of the API is a managed-identity token, not a stored credential — that's the one thread running through the whole diagram.
 
 **Identity — Microsoft Entra External ID, not roll-your-own.** Azure AD B2C has been closed to new customers since May 1, 2025, so it was never an option for a project starting now. Entra External ID is the direct replacement: a separate external tenant, self-service email signup, first 50,000 monthly active users free. This **replaces** the mini project's `AuthController`, `UserStore`'s credential role, `IPasswordHasher<User>`, and the `PasswordHash`/`LoginRequest`/`RegisterRequest` DTOs — those are removed, not extended. Identity for a request comes from a validated JWT's `oid` claim, not a session built on a hashed password.
 
