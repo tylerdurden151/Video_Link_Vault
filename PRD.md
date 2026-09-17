@@ -88,8 +88,8 @@ Monorepo, cloned outside OneDrive (same reasoning as the mini project — backgr
     │   │   ├── Data/
     │   │   │   ├── VideoLinkVaultDbContext.cs        NEW
     │   │   │   ├── Configurations/
-    │   │   │   │   ├── VideoLinkConfiguration.cs     NEW — Platform.HasConversion<string>(), Tags as Postgres text[]
-    │   │   │   │   └── UserConfiguration.cs          NEW — unique index on EntraObjectId
+    │   │   │   │   ├── VideoLinkConfiguration.cs     NEW — Fluent API: Platform.HasConversion<string>(), Tags as Postgres text[]
+    │   │   │   │   └── UserConfiguration.cs          NEW — Fluent API: unique index on EntraObjectId
     │   │   │   └── Migrations/                       EF Core migrations; applied via CI as an idempotent SQL script, not Database.Migrate()
     │   │   │
     │   │   │       ↳ target database — NOT a folder in this repo, an external resource the connection string/managed identity point at:
