@@ -3,10 +3,15 @@
 public class VideoLink
 {
     // The unique identifier for the video link
+    // Primary key for the VideoLink entity, used to uniquely identify each video link in the database.
     public Guid Id { get; set; }
 
     // The unique identifier of the user who owns this video link
+    //Foreign key to the User entity, establishing a relationship between the VideoLink and the User who owns it.
     public Guid UserId { get; set; }
+
+    // The user who owns this video link
+    public User User { get; set; } = null!;   
 
     public string Url { get; set; } = string.Empty;
 
