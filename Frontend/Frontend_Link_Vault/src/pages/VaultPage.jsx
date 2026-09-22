@@ -5,6 +5,7 @@ import SearchBar from "../components/SearchBar";
 import CategorySidebar from "../components/CategorySidebar";
 import AddLinkDialog from "../components/AddLinkDialog";
 import AuthDialog from "../components/AuthDialog";
+import Footer from "../components/Footer";
 import "./VaultPage.css";
 
 const PLATFORMS = ["All", "TikTok", "YouTube", "Instagram", "Facebook"];
@@ -313,21 +314,10 @@ function VaultPage() {
           )}
         </main>
       </div>
-      <footer className="app-footer">
-        <div>
-          <div>Video Link Vault</div>
-          <div className="muted">
-            {user ? links.length : 0} saved · {user ? visibleLinks.length : 0}{" "}
-            shown
-          </div>
-        </div>
-        <nav className="footer-links">
-          <a href="#">Import</a>
-          <a href="#">Export</a>
-          <a href="#">Settings</a>
-          <a href="#">Help</a>
-        </nav>
-      </footer>
+      <Footer
+        savedCount={user ? links.length : 0}
+        shownCount={user ? visibleLinks.length : 0}
+      />
       {dialogOpen && (
         <AddLinkDialog
           userId={user.id}
