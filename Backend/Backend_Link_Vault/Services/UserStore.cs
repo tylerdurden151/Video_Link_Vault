@@ -1,43 +1,32 @@
-﻿using System;
+﻿using Backend_Link_Vault.Data;
 using Backend_Link_Vault.Models;
+using Microsoft.EntityFrameworkCore;
+
 namespace Backend_Link_Vault.Services;
 
 public class UserStore
 {
-    private readonly List<User> _users = new List<User>();
+    private readonly AppDbContext _context;
 
-    public User? FindByEmail(string email)
+    public UserStore(AppDbContext context)
     {
-        //LINQ query to find the user by email, ignoring case sensitivity
-        //used Built in method FirstOrDefault to return the first user that matches the email or null if no user is found
-        //From _users
-        //Where u.Email == email, ignoring case sensitivity
-        //Select u
-        return _users.FirstOrDefault(u =>
-            string.Equals(
-                u.Email,
-                email,
-                StringComparison.OrdinalIgnoreCase));
+        _context = context;
     }
 
-    public User? FindById(Guid id)
+    public Task<User?> FindByEmailAsync(string email) =>
+        _context.Users.FirstOrDefaultAsync(u =>
+            u.Email.ToLower() == email.ToLower());
+
+    public Task<User?> FindByIdAsync(Guid id) =>
+        _context.Users.FirstOrDefaultAsync(u => u.Id == id);
+
+    public async Task<User> AddAsync(User user)
     {
-        //LINQ query to find the user by Id
-        //From _users
-        //Where u.Id == id
-        //Select u
-        return _users.FirstOrDefault(u => u.Id == id);
-    }
-    public User Add(User user)
-    {
-    
-        user.Id = Guid.NewGuid();
-        _users.Add(user);
+        _context.Users.Add(user);
+        await _context.SaveChangesAsync();
         return user;
     }
 
-    public IReadOnlyList<User> GetAllUsers()
-    {
-        return _users.AsReadOnly();
-    }
+    public Task<List<User>> GetAllUsersAsync() =>
+        _context.Users.ToListAsync();
 }

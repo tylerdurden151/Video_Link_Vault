@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Backend_Link_Vault.Models;
 using Backend_Link_Vault.DTO;
 using Backend_Link_Vault.Services;
+using Backend_Link_Vault.Interfaces;
 
 namespace Backend_Link_Vault.Controllers;
 
@@ -12,23 +13,21 @@ public class AuthController : ControllerBase
 {
     private readonly UserStore _userStore;
     private readonly IPasswordHasher<User> _passwordHasher;
-    private readonly VideoLinkStore _videoLinkStore;
+    private readonly IVideoLinkRepository _videoLinkRepository;
 
-    // Hardcoded on purpose, not configuration: this is the one demo account
-    // Every other account starts genuinely empty.
     private const string DemoAccountEmail = "timothy@example.com";
 
-    public AuthController(UserStore userStore, IPasswordHasher<User> passwordHasher, VideoLinkStore videoLinkStore)
+    public AuthController(UserStore userStore, IPasswordHasher<User> passwordHasher, IVideoLinkRepository videoLinkRepository)
     {
         _userStore = userStore;
         _passwordHasher = passwordHasher;
-        _videoLinkStore = videoLinkStore;
+        _videoLinkRepository = videoLinkRepository;
     }
 
     [HttpPost("register")]
-    public ActionResult<UserResponse> Register(RegisterRequest request)
+    public async Task<ActionResult<UserResponse>> Register(RegisterRequest request)
     {
-        if (_userStore.FindByEmail(request.Email) is not null)
+        if (await _userStore.FindByEmailAsync(request.Email) is not null)
         {
             return Conflict("An account with that email already exists.");
         }
@@ -40,28 +39,22 @@ public class AuthController : ControllerBase
             Email = request.Email,
         };
 
-        // Hash before the user ever reaches storage. HashPassword takes the
-        // user object for context (some hashers factor in user data), not
-        // because it reads PasswordHash — that's what we're about to set.
         user.PasswordHash = _passwordHasher.HashPassword(user, request.PasswordHash);
 
-        _userStore.Add(user);
+        await _userStore.AddAsync(user);
 
         if (string.Equals(user.Email, DemoAccountEmail, StringComparison.OrdinalIgnoreCase))
         {
-            _videoLinkStore.SeedDemoData(user.Id);
+            await _videoLinkRepository.SeedDemoDataAsync(user.Id);
         }
         return Ok(ToResponse(user));
     }
 
     [HttpPost("login")]
-    public ActionResult<UserResponse> Login(LoginRequest request)
+    public async Task<ActionResult<UserResponse>> Login(LoginRequest request)
     {
-        var user = _userStore.FindByEmail(request.Email);
+        var user = await _userStore.FindByEmailAsync(request.Email);
 
-        // Same generic error whether the email doesn't exist or the password
-        // is wrong — telling them apart would let someone probe which
-        // emails have accounts (user enumeration).
         if (user is null)
         {
             return Unauthorized("Invalid email or password.");

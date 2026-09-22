@@ -1,6 +1,9 @@
+using Backend_Link_Vault.Data;
+using Backend_Link_Vault.Interfaces;
 using Backend_Link_Vault.Models;
 using Backend_Link_Vault.Services;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 using System.Text.Json.Serialization;
 
 
@@ -26,10 +29,16 @@ builder.Services.AddCors(options =>
 });
 
 //One shared in-memory user store for the application
-builder.Services.AddSingleton<UserStore>();
+// old: builder.Services.AddSingleton<UserStore>();
+builder.Services.AddScoped<UserStore>();
 
-//One shared in-memory video link store for the application
-builder.Services.AddSingleton<VideoLinkStore>();
+// old: builder.Services.AddSingleton<VideoLinkStore>();
+builder.Services.AddScoped<IVideoLinkRepository, EfVideoLinkRepository>();
+
+// Add the AppDbContext to the service container, using PostgreSQL as the database provider
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"))
+           .UseSnakeCaseNamingConvention());
 
 //Password hasher for hashing and verifying passwords
 builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
@@ -43,19 +52,24 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var userStore = scope.ServiceProvider.GetRequiredService<UserStore>();
-    var videoLinkStore = scope.ServiceProvider.GetRequiredService<VideoLinkStore>();
+    var videoLinkRepository = scope.ServiceProvider.GetRequiredService<IVideoLinkRepository>();
     var passwordHasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher<User>>();
 
-    var demoUser = new User
-    {
-        FirstName = "Timothy",
-        LastName = "Eckart",
-        Email = "timothy@example.com",
-    };
-    demoUser.PasswordHash = passwordHasher.HashPassword(demoUser, "video123");
+    var existingDemoUser = await userStore.FindByEmailAsync("timothy@example.com");
 
-    userStore.Add(demoUser);
-    videoLinkStore.SeedDemoData(demoUser.Id);
+    if (existingDemoUser is null)
+    {
+        var demoUser = new User
+        {
+            FirstName = "Timothy",
+            LastName = "Eckart",
+            Email = "timothy@example.com",
+        };
+        demoUser.PasswordHash = passwordHasher.HashPassword(demoUser, "video123");
+
+        await userStore.AddAsync(demoUser);
+        await videoLinkRepository.SeedDemoDataAsync(demoUser.Id);
+    }
 }
 
 app.UseHttpsRedirection();
