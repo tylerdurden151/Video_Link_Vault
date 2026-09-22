@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { API_BASE_URL } from "./config";
-import LinkCard from "./components/LinkCard";
-import SearchBar from "./components/SearchBar";
-import CategorySidebar from "./components/CategorySidebar";
-import AddLinkDialog from "./components/AddLinkDialog";
-import AuthDialog from "./components/AuthDialog";
-import "./App.css";
+import { API_BASE_URL } from "../config";
+import LinkCard from "../components/LinkCard";
+import SearchBar from "../components/SearchBar";
+import CategorySidebar from "../components/CategorySidebar";
+import AddLinkDialog from "../components/AddLinkDialog";
+import AuthDialog from "../components/AuthDialog";
+import "./VaultPage.css";
 
 const PLATFORMS = ["All", "TikTok", "YouTube", "Instagram", "Facebook"];
 
@@ -24,7 +24,7 @@ const TIME_RANGES = [
   { label: "Past year", days: 365 },
 ];
 
-function App() {
+function VaultPage() {
   //State for platform filter, search query, and time range filter
   const [platform, setPlatform] = useState("All");
   //State for search query and time range filter
@@ -350,4 +350,4 @@ function App() {
   );
 }
 
-export default App;
+export default VaultPage;

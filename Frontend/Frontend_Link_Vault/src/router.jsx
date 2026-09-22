@@ -1,11 +1,11 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import App from "./App.jsx";
+import VaultPage from "./pages/VaultPage.jsx";
 
 function AppRouter() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<App />} />
+        <Route path="/" element={<VaultPage />} />
       </Routes>
     </BrowserRouter>
   );
