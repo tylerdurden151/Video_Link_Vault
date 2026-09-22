@@ -4,8 +4,9 @@ using Backend_Link_Vault.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace Backend_Link_Vault.Services;
-// This class implements the IVideoLinkRepository interface and provides methods for managing video links in the database using
-// Entity Framework Core.
+// This class implements the IVideoLinkRepository interface and provides methods for
+// managing video links in the database using Entity Framework Core.
+// IVideoLinkRepository defines the contract for the repository, and EfVideoLinkRepository provides the actual implementation.
 public class EfVideoLinkRepository : IVideoLinkRepository
 {
     private readonly AppDbContext _context;
@@ -44,9 +45,8 @@ public class EfVideoLinkRepository : IVideoLinkRepository
         DateTime DaysAgo(int n) => DateTime.UtcNow.AddDays(-n);
 
         var seed = new List<VideoLink>
-        {
-            new() { UserId = userId, Url = "https://youtube.com/shorts/IuOt6euql7s", Platform = Platform.YouTube, Title = "Lovestruck", ThumbnailUrl = "https://img.youtube.com/vi/IuOt6euql7s/hqdefault.jpg", Category = "kennygifs", Tags = new() { "funny" }, CreatedAtUtc = DaysAgo(3) },
-            // ...same seed list you already have in VideoLinkStore, unchanged
+         {
+        new() { UserId = userId, Url = "https://youtube.com/shorts/IuOt6euql7s", Platform = Platform.YouTube, Title = "Lovestruck", ThumbnailUrl = "https://img.youtube.com/vi/IuOt6euql7s/hqdefault.jpg", Category = "kennygifs", Tags = new() { "funny" }, CreatedAtUtc = DaysAgo(3) },
         };
 
         foreach (var link in seed)
