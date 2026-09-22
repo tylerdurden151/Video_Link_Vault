@@ -5,10 +5,13 @@ import SearchBar from "../components/SearchBar";
 import CategorySidebar from "../components/CategorySidebar";
 import AddLinkDialog from "../components/AddLinkDialog";
 import AuthDialog from "../components/AuthDialog";
+import UsageBanner from "../components/UsageBanner";
 import Footer from "../components/Footer";
 import "./VaultPage.css";
 
 const PLATFORMS = ["All", "TikTok", "YouTube", "Instagram", "Facebook"];
+
+const LINK_LIMIT = 30;
 
 const PLATFORM_COLORS = {
   TikTok: "#EE1D52",
@@ -243,6 +246,7 @@ function VaultPage() {
           )}
         </div>
       </header>
+      {user && <UsageBanner usedCount={links.length} limit={LINK_LIMIT} />}
       <div className="app-body">
         <CategorySidebar
           categories={user ? categories : []}
