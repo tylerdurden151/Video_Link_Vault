@@ -1,4 +1,6 @@
-﻿namespace Backend_Link_Vault.Models;
+﻿using System.Text.Json.Serialization;
+
+namespace Backend_Link_Vault.Models;
 
 public class VideoLink
 {
@@ -11,7 +13,9 @@ public class VideoLink
     public Guid UserId { get; set; }
 
     // The user who owns this video link
-    public User User { get; set; } = null!;   
+    // tells the JSON serializer to skip this property entirely
+    [JsonIgnore]
+    public User User { get; set; } = null!;
 
     public string Url { get; set; } = string.Empty;
 
