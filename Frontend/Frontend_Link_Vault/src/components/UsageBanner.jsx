@@ -1,6 +1,7 @@
+import "./UsageBanner.css";
+
 function UsageBanner({ usedCount, limit }) {
   const percentUsed = Math.min((usedCount / limit) * 100, 100);
-
   return (
     <div className="usage-banner">
       <span className="usage-text">
@@ -12,5 +13,4 @@ function UsageBanner({ usedCount, limit }) {
     </div>
   );
 }
-
 export default UsageBanner;

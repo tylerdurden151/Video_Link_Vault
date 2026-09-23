@@ -1,7 +1,7 @@
 .app {
   min-height: 100vh;
-  display: grid;
-  grid-template-rows: auto 1fr auto;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ---- Header ---- */
@@ -117,6 +117,7 @@
 }
 /* ---- Body: sidebar + content ---- */
 .app-body {
+  flex: 1;
   display: grid;
   grid-template-columns: 220px 1fr;
   gap: 28px;
